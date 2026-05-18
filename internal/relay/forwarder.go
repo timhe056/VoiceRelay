@@ -76,14 +76,9 @@ func (s *Server) handlePacket(data []byte, sender *net.UDPAddr) {
 		return
 	}
 
-	// Verify sender IP (weak guard — token auth in header is the real security).
-	if !ipsMatch(client.Addr.IP, sender.IP) {
-		s.logger.Printf("IP mismatch for token %x: registered %v, got %v",
-			hdr.Token, client.Addr, sender)
-		return
-	}
-	// Update address to actual sender (handles NAT port remapping).
-	// The client's HTTP-reported port may differ from its NAT-mapped UDP port.
+	// Update address to actual sender on every packet.
+	// HTTP and UDP may arrive from different IPs behind carrier-grade NAT / VPN.
+	// Token auth in the 22-byte header is the real security (128-bit random).
 	client.Addr = sender
 
 	// Channel guard: packet channel must match server-recorded channel
@@ -112,18 +107,6 @@ func (s *Server) handlePacket(data []byte, sender *net.UDPAddr) {
 	}
 
 	_ = payloadLen // used for future bandwidth metrics
-}
-
-// ipsMatch returns true if two IPs should be considered the same for packet routing.
-// Loopback addresses are treated as matching any local-machine address.
-func ipsMatch(a, b net.IP) bool {
-	if a.Equal(b) {
-		return true
-	}
-	if a.IsLoopback() || b.IsLoopback() {
-		return true // same machine, different interface
-	}
-	return false
 }
 
 // Conn returns the underlying UDP connection (for use by tests).

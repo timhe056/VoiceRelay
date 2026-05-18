@@ -136,28 +136,40 @@ func TestForwardToSameChannel(t *testing.T) {
 	}
 }
 
-func TestIPMismatchRejected(t *testing.T) {
+func TestAddressUpdateOnReceive(t *testing.T) {
 	mgr := room.NewManager(12)
 	s := startLoopbackServer(t, mgr)
 	serverAddr := s.conn.LocalAddr().(*net.UDPAddr)
 
 	t1 := newToken()
+	t2 := newToken()
+
+	addr1, _ := newClientConn(t, serverAddr)
 	addr2, conn2 := newClientConn(t, serverAddr)
+	_, conn3 := newClientConn(t, serverAddr) // t1's actual sender
 
-	// Register t1 with addr2's address (wrong!)
-	mgr.RegisterClient("r1", 0, addr2, t1)
-
-	// But send from a different address
-	_, conn3 := newClientConn(t, serverAddr)
+	// Register t2 with its real address; t1 with a wrong address
+	mgr.RegisterClient("r1", 0, addr2, t2)
+	mgr.RegisterClient("r1", 0, addr1, t1)
 
 	time.Sleep(50 * time.Millisecond)
 
-	sendPacket(t, conn3, serverAddr, t1, 1, 0, header.CodecOpus, []byte("spoof"))
+	// t1 sends from conn3 (different from registered addr1)
+	sendPacket(t, conn3, serverAddr, t1, 1, 0, header.CodecOpus, []byte("hello"))
 
-	// conn2 (the registered address) should NOT receive — spoof rejected
-	pkt, _ := recvPacket(t, conn2, 200*time.Millisecond)
+	// t2 should receive (forwarded from t1)
+	pkt, _ := recvPacket(t, conn2, 500*time.Millisecond)
+	if pkt == nil {
+		t.Error("t2 should receive forwarded packet from t1")
+	}
+	if pkt != nil && string(pkt[header.Size:]) != "hello" {
+		t.Errorf("payload = %q, want hello", string(pkt[header.Size:]))
+	}
+
+	// t1 should NOT receive own packet
+	pkt, _ = recvPacket(t, conn3, 100*time.Millisecond)
 	if pkt != nil {
-		t.Error("spoofed packet should be rejected")
+		t.Error("sender should not receive own packet")
 	}
 }
 
