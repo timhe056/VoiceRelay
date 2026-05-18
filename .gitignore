@@ -1,0 +1,14 @@
+# Binaries
+*.exe
+/voicerelay
+/cmd/voicerelay/voicerelay
+/cmd/testclient/testclient
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
