@@ -76,12 +76,15 @@ func (s *Server) handlePacket(data []byte, sender *net.UDPAddr) {
 		return
 	}
 
-	// IP guard: reject only when clearly different (allow same-machine loopback↔NIC)
-	if client.Addr.Port != sender.Port || !ipsMatch(client.Addr.IP, sender.IP) {
+	// Verify sender IP (weak guard — token auth in header is the real security).
+	if !ipsMatch(client.Addr.IP, sender.IP) {
 		s.logger.Printf("IP mismatch for token %x: registered %v, got %v",
 			hdr.Token, client.Addr, sender)
 		return
 	}
+	// Update address to actual sender (handles NAT port remapping).
+	// The client's HTTP-reported port may differ from its NAT-mapped UDP port.
+	client.Addr = sender
 
 	// Channel guard: packet channel must match server-recorded channel
 	// (client may have stale channel from before a server-side switch)
