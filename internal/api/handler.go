@@ -28,6 +28,7 @@ func NewHandler(mgr *room.Manager, publicIP string, udpPort int) http.Handler {
 	mux.HandleFunc("POST /api/voice/join", h.handleJoin)
 	mux.HandleFunc("DELETE /api/voice/leave", h.handleLeave)
 	mux.HandleFunc("POST /api/voice/channel", h.handleChannel)
+	mux.HandleFunc("GET /api/voice/room/{roomId}/members", h.handleRoomMembers)
 	mux.HandleFunc("GET /api/voice/stats", h.handleStats)
 	mux.HandleFunc("GET /healthz", h.handleHealth)
 	return mux
@@ -55,6 +56,11 @@ type ErrorResponse struct {
 type ChannelRequest struct {
 	ClientToken string `json:"clientToken"`
 	NewChannel  byte   `json:"newChannel"`
+}
+
+type RoomMembersResponse struct {
+	RoomID  string             `json:"roomId"`
+	Members []room.MemberInfo  `json:"members"`
 }
 
 type StatsResponse struct {
@@ -91,7 +97,7 @@ func (h *Handler) handleJoin(w http.ResponseWriter, r *http.Request) {
 	token := generateToken()
 	addr := &net.UDPAddr{IP: net.ParseIP(clientIP), Port: udpPort}
 
-	client, ok := h.mgr.RegisterClient(req.RoomID, req.Channel, addr, token)
+	client, ok := h.mgr.RegisterClient(req.RoomID, req.DisplayName, req.Channel, addr, token)
 	if !ok {
 		writeJSON(w, http.StatusTooManyRequests, ErrorResponse{Error: "room is full"})
 		return
@@ -147,6 +153,19 @@ func (h *Handler) handleChannel(w http.ResponseWriter, r *http.Request) {
 	} else {
 		writeJSON(w, http.StatusNotFound, ErrorResponse{Error: "token not found"})
 	}
+}
+
+func (h *Handler) handleRoomMembers(w http.ResponseWriter, r *http.Request) {
+	roomID := r.PathValue("roomId")
+	if roomID == "" {
+		writeJSON(w, http.StatusBadRequest, ErrorResponse{Error: "roomId is required"})
+		return
+	}
+	members := h.mgr.ListRoomMembers(roomID)
+	writeJSON(w, http.StatusOK, RoomMembersResponse{
+		RoomID:  roomID,
+		Members: members,
+	})
 }
 
 func (h *Handler) handleStats(w http.ResponseWriter, r *http.Request) {

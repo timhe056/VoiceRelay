@@ -22,7 +22,7 @@ func TestRegisterAndGet(t *testing.T) {
 	token := newToken()
 	addr := newAddr(9000)
 
-	client, ok := m.RegisterClient("room1", 1, addr, token)
+	client, ok := m.RegisterClient("room1", "", 1, addr, token)
 	if !ok {
 		t.Fatal("RegisterClient failed")
 	}
@@ -45,7 +45,7 @@ func TestRegisterAndGet(t *testing.T) {
 func TestUnregister(t *testing.T) {
 	m := NewManager(12)
 	token := newToken()
-	m.RegisterClient("room1", 1, newAddr(1), token)
+	m.RegisterClient("room1", "", 1, newAddr(1), token)
 
 	if !m.UnregisterClient(token) {
 		t.Error("UnregisterClient should succeed")
@@ -64,9 +64,9 @@ func TestChannelMembers(t *testing.T) {
 	t2 := newToken()
 	t3 := newToken()
 
-	m.RegisterClient("r1", 0, newAddr(1), t1)
-	m.RegisterClient("r1", 0, newAddr(2), t2)
-	m.RegisterClient("r1", 1, newAddr(3), t3) // different channel
+	m.RegisterClient("r1", "", 0, newAddr(1), t1)
+	m.RegisterClient("r1", "", 0, newAddr(2), t2)
+	m.RegisterClient("r1", "", 1, newAddr(3), t3) // different channel
 
 	members := m.ChannelMembers("r1", 0)
 	if len(members) != 2 {
@@ -87,7 +87,7 @@ func TestChannelMembers(t *testing.T) {
 func TestUpdateChannel(t *testing.T) {
 	m := NewManager(12)
 	token := newToken()
-	m.RegisterClient("r1", 0, newAddr(1), token)
+	m.RegisterClient("r1", "", 0, newAddr(1), token)
 
 	if !m.UpdateChannel(token, 2) {
 		t.Error("UpdateChannel failed")
@@ -124,16 +124,16 @@ func TestMaxPerRoom(t *testing.T) {
 	t2 := newToken()
 	t3 := newToken()
 
-	m.RegisterClient("r1", 0, newAddr(1), t1)
-	m.RegisterClient("r1", 0, newAddr(2), t2)
+	m.RegisterClient("r1", "", 0, newAddr(1), t1)
+	m.RegisterClient("r1", "", 0, newAddr(2), t2)
 
-	_, ok := m.RegisterClient("r1", 0, newAddr(3), t3)
+	_, ok := m.RegisterClient("r1", "", 0, newAddr(3), t3)
 	if ok {
 		t.Error("third client should be rejected (room full)")
 	}
 
 	// But a different room should work
-	_, ok = m.RegisterClient("r2", 0, newAddr(3), t3)
+	_, ok = m.RegisterClient("r2", "", 0, newAddr(3), t3)
 	if !ok {
 		t.Error("different room should accept")
 	}
@@ -144,8 +144,8 @@ func TestPurgeExpired(t *testing.T) {
 	t1 := newToken()
 	t2 := newToken()
 
-	m.RegisterClient("r1", 0, newAddr(1), t1)
-	m.RegisterClient("r1", 0, newAddr(2), t2)
+	m.RegisterClient("r1", "", 0, newAddr(1), t1)
+	m.RegisterClient("r1", "", 0, newAddr(2), t2)
 
 	// Simulate t2 being idle for 5 seconds by setting its last packet time back
 	c2 := m.GetClient(t2)
@@ -187,9 +187,9 @@ func TestStats(t *testing.T) {
 	t2 := newToken()
 	t3 := newToken()
 
-	m.RegisterClient("r1", 0, newAddr(1), t1)
-	m.RegisterClient("r1", 1, newAddr(2), t2)
-	m.RegisterClient("r2", 0, newAddr(3), t3)
+	m.RegisterClient("r1", "", 0, newAddr(1), t1)
+	m.RegisterClient("r1", "", 1, newAddr(2), t2)
+	m.RegisterClient("r2", "", 0, newAddr(3), t3)
 
 	rooms, clients := m.Stats()
 	if rooms != 2 {
@@ -209,7 +209,7 @@ func TestConcurrentAccess(t *testing.T) {
 		go func(id int) {
 			token := newToken()
 			addr := newAddr(9000 + id)
-			m.RegisterClient("r1", byte(id%5), addr, token)
+			m.RegisterClient("r1", "", byte(id%5), addr, token)
 			done <- true
 		}(i)
 	}

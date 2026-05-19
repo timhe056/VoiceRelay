@@ -3,6 +3,7 @@
 package room
 
 import (
+	"encoding/hex"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -11,11 +12,12 @@ import (
 
 // Client represents a connected voice client.
 type Client struct {
-	Token      [16]byte
-	Addr       *net.UDPAddr
-	RoomID     string
-	Channel    byte
-	lastPacket int64 // unix nano, accessed atomically
+	Token       [16]byte
+	DisplayName string
+	Addr        *net.UDPAddr
+	RoomID      string
+	Channel     byte
+	lastPacket  int64 // unix nano, accessed atomically
 }
 
 // LastPacket returns the time of the last received voice packet.
@@ -58,7 +60,7 @@ func NewManager(maxPerRoom int) *Manager {
 
 // RegisterClient adds a client to a room/channel. If the room doesn't exist it is created.
 // Returns the Client and true on success, or nil and false if the room is full.
-func (m *Manager) RegisterClient(roomID string, channel byte, addr *net.UDPAddr, token [16]byte) (*Client, bool) {
+func (m *Manager) RegisterClient(roomID string, displayName string, channel byte, addr *net.UDPAddr, token [16]byte) (*Client, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -78,10 +80,11 @@ func (m *Manager) RegisterClient(roomID string, channel byte, addr *net.UDPAddr,
 	}
 
 	client := &Client{
-		Token:   token,
-		Addr:    addr,
-		RoomID:  roomID,
-		Channel: channel,
+		Token:       token,
+		DisplayName: displayName,
+		Addr:        addr,
+		RoomID:      roomID,
+		Channel:     channel,
 	}
 	client.Touch()
 
@@ -223,6 +226,42 @@ func (m *Manager) removeClientLocked(token [16]byte) {
 	if len(room.channels) == 0 {
 		delete(m.rooms, client.RoomID)
 	}
+}
+
+// MemberInfo is a read-only snapshot of a room member for the HTTP API.
+type MemberInfo struct {
+	Token       string `json:"token"`
+	DisplayName string `json:"displayName"`
+	Channel     byte   `json:"channel"`
+	Online      bool   `json:"online"`
+}
+
+// ListRoomMembers returns all members in a room with their online status.
+// Online = received a voice packet within the last 30 seconds.
+func (m *Manager) ListRoomMembers(roomID string) []MemberInfo {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	room, ok := m.rooms[roomID]
+	if !ok {
+		return nil
+	}
+
+	now := time.Now().UnixNano()
+	deadline := now - int64(30*time.Second)
+
+	var members []MemberInfo
+	for _, clients := range room.channels {
+		for _, c := range clients {
+			members = append(members, MemberInfo{
+				Token:       hex.EncodeToString(c.Token[:]),
+				DisplayName: c.DisplayName,
+				Channel:     c.Channel,
+				Online:      atomic.LoadInt64(&c.lastPacket) >= deadline,
+			})
+		}
+	}
+	return members
 }
 
 // Stats returns current room and client counts.

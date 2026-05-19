@@ -97,9 +97,9 @@ func TestForwardToSameChannel(t *testing.T) {
 	addr3, conn3 := newClientConn(t, serverAddr)
 
 	// All in room "r1", channels 0 and 1 (t1/t2 in ch0, t3 in ch1)
-	mgr.RegisterClient("r1", 0, addr1, t1)
-	mgr.RegisterClient("r1", 0, addr2, t2)
-	mgr.RegisterClient("r1", 1, addr3, t3)
+	mgr.RegisterClient("r1", "", 0, addr1, t1)
+	mgr.RegisterClient("r1", "", 0, addr2, t2)
+	mgr.RegisterClient("r1", "", 1, addr3, t3)
 
 	// Wait for goroutines to settle
 	time.Sleep(50 * time.Millisecond)
@@ -149,8 +149,8 @@ func TestAddressUpdateOnReceive(t *testing.T) {
 	_, conn3 := newClientConn(t, serverAddr) // t1's actual sender
 
 	// Register t2 with its real address; t1 with a wrong address
-	mgr.RegisterClient("r1", 0, addr2, t2)
-	mgr.RegisterClient("r1", 0, addr1, t1)
+	mgr.RegisterClient("r1", "", 0, addr2, t2)
+	mgr.RegisterClient("r1", "", 0, addr1, t1)
 
 	time.Sleep(50 * time.Millisecond)
 
@@ -207,7 +207,7 @@ func TestConcurrentForward(t *testing.T) {
 		tokens[i] = newToken()
 		addr, conn := newClientConn(t, serverAddr)
 		conns[i] = conn
-		mgr.RegisterClient("r1", 0, addr, tokens[i])
+		mgr.RegisterClient("r1", "", 0, addr, tokens[i])
 	}
 
 	time.Sleep(50 * time.Millisecond)

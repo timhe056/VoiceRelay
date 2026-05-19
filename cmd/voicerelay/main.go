@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"time"
 
 	"github.com/boardgame/voicerelay/internal/api"
@@ -15,12 +16,12 @@ import (
 )
 
 func main() {
-	udpAddr := flag.String("udp", ":9000", "UDP listen address for voice packets")
-	httpAddr := flag.String("http", ":8080", "HTTP listen address for signaling API")
-	publicIP := flag.String("public-ip", "", "public IP advertised to clients (auto-detect if empty)")
-	maxPerRoom := flag.Int("max-per-room", 12, "maximum clients per room")
-	timeoutMin := flag.Int("timeout-min", 2, "client timeout in minutes (no packet)")
-	cleanupSec := flag.Int("cleanup-sec", 30, "expired client cleanup interval in seconds")
+	udpAddr := flag.String("udp", envOrDefault("UDP_PORT", ":9000"), "UDP listen address for voice packets")
+	httpAddr := flag.String("http", envOrDefault("HTTP_PORT", ":8080"), "HTTP listen address for signaling API")
+	publicIP := flag.String("public-ip", os.Getenv("PUBLIC_IP"), "public IP advertised to clients (auto-detect if empty)")
+	maxPerRoom := flag.Int("max-per-room", envOrDefaultInt("MAX_PER_ROOM", 12), "maximum clients per room")
+	timeoutMin := flag.Int("timeout-min", envOrDefaultInt("TIMEOUT_MIN", 2), "client timeout in minutes (no packet)")
+	cleanupSec := flag.Int("cleanup-sec", envOrDefaultInt("CLEANUP_SEC", 30), "expired client cleanup interval in seconds")
 	flag.Parse()
 
 	logger := log.New(os.Stdout, "[voicerelay] ", log.LstdFlags|log.Lmsgprefix)
@@ -89,6 +90,22 @@ func main() {
 	close(stopCleanup)
 	relayServer.Close()
 	httpServer.Close()
+}
+
+func envOrDefault(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
+func envOrDefaultInt(key string, def int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
+	}
+	return def
 }
 
 func resolvePublicIP(listenAddr string) string {
