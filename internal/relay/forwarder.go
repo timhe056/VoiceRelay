@@ -1,11 +1,10 @@
 // Package relay implements the core voice packet forwarding engine.
-// It receives UDP packets, validates the header, and forwards them
-// to all other clients in the same voice channel.
 package relay
 
 import (
 	"log"
 	"net"
+	"sync"
 
 	"github.com/boardgame/voicerelay/internal/header"
 	"github.com/boardgame/voicerelay/internal/room"
@@ -16,6 +15,18 @@ type Server struct {
 	conn   *net.UDPConn
 	mgr    *room.Manager
 	logger *log.Logger
+
+	workers   int
+	packetCh  chan packetJob
+	closeCh   chan struct{}
+	closeOnce sync.Once
+
+	bufPool sync.Pool
+}
+
+type packetJob struct {
+	data   []byte
+	sender *net.UDPAddr
 }
 
 // New creates a Server with the given room manager.
@@ -23,14 +34,18 @@ func New(mgr *room.Manager, logger *log.Logger) *Server {
 	if logger == nil {
 		logger = log.Default()
 	}
-	return &Server{
-		mgr:    mgr,
-		logger: logger,
+	s := &Server{
+		mgr:      mgr,
+		logger:   logger,
+		workers:  8,
+		packetCh: make(chan packetJob, 2048),
+		closeCh:  make(chan struct{}),
 	}
+	s.bufPool.New = func() interface{} { return make([]byte, 2048) }
+	return s
 }
 
 // ListenUDP binds to addr (e.g. ":9000") and starts the receive loop.
-// This method blocks until the connection is closed.
 func (s *Server) ListenUDP(addr string) error {
 	udpAddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
@@ -42,22 +57,55 @@ func (s *Server) ListenUDP(addr string) error {
 	}
 	s.conn = conn
 
+	// Start worker pool
+	for i := 0; i < s.workers; i++ {
+		go s.worker()
+	}
+
 	buf := make([]byte, 2048)
 	for {
 		n, remoteAddr, err := conn.ReadFromUDP(buf)
 		if err != nil {
-			s.logger.Printf("UDP read error: %v", err)
-			continue
+			select {
+			case <-s.closeCh:
+				return nil
+			default:
+				s.logger.Printf("UDP read error: %v", err)
+				continue
+			}
 		}
-		// Copy data since buf will be reused on next read
-		packet := make([]byte, n)
-		copy(packet, buf[:n])
 
-		go s.handlePacket(packet, remoteAddr)
+		// Copy data via buffer pool to avoid per-packet allocation
+		poolBuf := s.bufPool.Get().([]byte)
+		copyLen := n
+		if copyLen > len(poolBuf) {
+			copyLen = len(poolBuf)
+		}
+		copy(poolBuf[:copyLen], buf[:n])
+
+		job := packetJob{data: poolBuf[:copyLen], sender: remoteAddr}
+		select {
+		case s.packetCh <- job:
+		default:
+			// Channel full — drop packet
+			s.bufPool.Put(poolBuf)
+		}
 	}
 }
 
-// handlePacket processes a single incoming voice packet on its own goroutine.
+func (s *Server) worker() {
+	for {
+		select {
+		case job := <-s.packetCh:
+			s.handlePacket(job.data, job.sender)
+			s.bufPool.Put(job.data[:cap(job.data)])
+		case <-s.closeCh:
+			return
+		}
+	}
+}
+
+// handlePacket processes a single incoming voice packet.
 func (s *Server) handlePacket(data []byte, sender *net.UDPAddr) {
 	if len(data) < header.Size {
 		return
@@ -67,55 +115,42 @@ func (s *Server) handlePacket(data []byte, sender *net.UDPAddr) {
 	if err != nil {
 		return
 	}
-	payloadLen := len(data) - header.Size
 
-	// Token lookup
 	client := s.mgr.GetClient(hdr.Token)
 	if client == nil {
-		// Invalid or expired token — log once per burst?
 		return
 	}
 
-	// Update address to actual sender on every packet.
-	// HTTP and UDP may arrive from different IPs behind carrier-grade NAT / VPN.
-	// Token auth in the 22-byte header is the real security (128-bit random).
+	// Update address on every packet (NAT rebinding)
 	client.Addr = sender
 
-	// Channel guard: packet channel must match server-recorded channel
-	// (client may have stale channel from before a server-side switch)
+	// Channel guard
 	if client.Channel != hdr.Channel {
-		// Forward anyway but with the server-authoritative channel
 		hdr.Channel = client.Channel
-		// Re-encode header into the packet so forwarded clients see the correct channel
 		hdr.Write(data[:header.Size])
 	}
 
-	// Keepalive
 	client.Touch()
 
-	// Forward to all other clients in the same channel
+	// Forward to all other clients in same channel
 	targets := s.mgr.ChannelMembers(client.RoomID, client.Channel)
 	for _, target := range targets {
 		if target.Token == hdr.Token {
 			continue
 		}
-		// TODO: could skip per-target header re-encode by caching
 		_, err := s.conn.WriteToUDP(data, target.Addr)
 		if err != nil {
 			s.logger.Printf("forward to %v failed: %v", target.Addr, err)
 		}
 	}
-
-	_ = payloadLen // used for future bandwidth metrics
 }
 
-// Conn returns the underlying UDP connection (for use by tests).
-func (s *Server) Conn() *net.UDPConn {
-	return s.conn
-}
+// Conn returns the underlying UDP connection.
+func (s *Server) Conn() *net.UDPConn { return s.conn }
 
-// Close shuts down the UDP listener.
+// Close shuts down the UDP listener and workers.
 func (s *Server) Close() error {
+	s.closeOnce.Do(func() { close(s.closeCh) })
 	if s.conn != nil {
 		return s.conn.Close()
 	}

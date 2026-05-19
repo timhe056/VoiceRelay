@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"strconv"
@@ -22,6 +23,7 @@ func main() {
 	maxPerRoom := flag.Int("max-per-room", envOrDefaultInt("MAX_PER_ROOM", 12), "maximum clients per room")
 	timeoutMin := flag.Int("timeout-min", envOrDefaultInt("TIMEOUT_MIN", 2), "client timeout in minutes (no packet)")
 	cleanupSec := flag.Int("cleanup-sec", envOrDefaultInt("CLEANUP_SEC", 30), "expired client cleanup interval in seconds")
+	pprof := flag.Bool("pprof", false, "enable /debug/pprof/ endpoints")
 	flag.Parse()
 
 	logger := log.New(os.Stdout, "[voicerelay] ", log.LstdFlags|log.Lmsgprefix)
@@ -69,9 +71,20 @@ func main() {
 
 	// HTTP signaling
 	handler := api.NewHandler(mgr, ip, udpPort)
+
+	var httpHandler http.Handler
+	if *pprof {
+		pprofMux := http.NewServeMux()
+		pprofMux.Handle("/debug/pprof/", http.DefaultServeMux)
+		pprofMux.Handle("/", handler)
+		httpHandler = pprofMux
+	} else {
+		httpHandler = handler
+	}
+
 	httpServer := &http.Server{
 		Addr:    *httpAddr,
-		Handler: handler,
+		Handler: httpHandler,
 	}
 
 	go func() {
