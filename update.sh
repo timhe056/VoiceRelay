@@ -16,7 +16,7 @@ pkill -9 voicerelay 2>/dev/null || true
 sleep 1
 
 echo "=== Deploying ==="
-cp voicerelay /usr/local/bin/voicerelay
+cp voicerelay /opt/voicerelay/voicerelay
 
 echo "=== Starting ==="
 systemctl start voicerelay
