@@ -244,7 +244,7 @@ func (m *Manager) ListRoomMembers(roomID string) []MemberInfo {
 
 	room, ok := m.rooms[roomID]
 	if !ok {
-		return nil
+		return []MemberInfo{}
 	}
 
 	now := time.Now().UnixNano()
