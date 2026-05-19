@@ -152,7 +152,13 @@ func main() {
 	fmt.Printf("  Target rate   : %d pps/client\n", *rate)
 	fmt.Printf("  Packets sent  : %d (%.0f pps avg)\n", sent, float64(sent)/dur.Seconds())
 	fmt.Printf("  Packets recv  : %d (%.0f pps avg)\n", recv, float64(recv)/dur.Seconds())
-	fmt.Printf("  Loss rate     : %.4f%%\n", (1-float64(recv)/float64(sent))*100)
+
+	expectedRecv := sent * int64(*n-1)
+	if expectedRecv > 0 {
+		loss := (1 - float64(recv)/float64(expectedRecv)) * 100
+		fmt.Printf("  Expected recv : %d\n", expectedRecv)
+		fmt.Printf("  Loss rate     : %.4f%%\n", loss)
+	}
 	fmt.Printf("  Server rooms  : %d\n", rooms)
 	fmt.Printf("  Server clients: %d\n", active)
 	fmt.Println("=======================================")
