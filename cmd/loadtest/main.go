@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"sync/atomic"
 	"time"
 )
@@ -128,8 +129,15 @@ func main() {
 	}()
 
 	// ── Run ──
-	logger.Printf("Running for %v...", *dur)
-	time.Sleep(*dur)
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt)
+
+	logger.Printf("Running for %v (Ctrl+C to stop early)...", *dur)
+	select {
+	case <-time.After(*dur):
+	case <-sigCh:
+		logger.Printf("interrupted, stopping...")
+	}
 	close(stop)
 
 	// ── Summary ──
@@ -149,10 +157,13 @@ func main() {
 	fmt.Printf("  Server clients: %d\n", active)
 	fmt.Println("=======================================")
 
-	// Cleanup
+	// Cleanup — leave all clients
+	logger.Printf("cleaning up %d clients...", *n)
 	for _, c := range clients {
+		leave(*apiURL, c.token)
 		c.conn.Close()
 	}
+	logger.Printf("cleanup done")
 }
 
 func join(apiURL, roomID string, channel, localPort int) (string, string, int) {
@@ -169,6 +180,15 @@ func join(apiURL, roomID string, channel, localPort int) (string, string, int) {
 		log.Fatalf("Join returned no token (status %d)", resp.StatusCode)
 	}
 	return jr.ClientToken, jr.ServerEndpoint, jr.ServerPort
+}
+
+func leave(apiURL, token string) {
+	req, _ := http.NewRequest("DELETE", apiURL+"/api/voice/leave?token="+token, nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return
+	}
+	resp.Body.Close()
 }
 
 func fetchStats(apiURL string) (int, int) {
