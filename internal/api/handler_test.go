@@ -75,7 +75,6 @@ func TestJoinInvalidRequest(t *testing.T) {
 	}{
 		{"missing roomId", `{"channel":1,"udpPort":5000}`, http.StatusBadRequest},
 		{"invalid json", `{bad}`, http.StatusBadRequest},
-		{"missing udpPort", `{"roomId":"abc","channel":1}`, http.StatusBadRequest},
 	}
 
 	for _, tt := range tests {

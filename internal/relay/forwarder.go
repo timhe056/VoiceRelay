@@ -138,6 +138,9 @@ func (s *Server) handlePacket(data []byte, sender *net.UDPAddr) {
 		if target.Token == hdr.Token {
 			continue
 		}
+		if target.Addr == nil {
+			continue // address not yet learned (client hasn't sent a UDP packet)
+		}
 		_, err := s.conn.WriteToUDP(data, target.Addr)
 		if err != nil {
 			s.logger.Printf("forward to %v failed: %v", target.Addr, err)

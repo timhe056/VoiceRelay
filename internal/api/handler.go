@@ -81,23 +81,12 @@ func (h *Handler) handleJoin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Determine client's public address from the HTTP request
-	clientIP, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "cannot parse remote addr"})
-		return
-	}
-	// The UDP port the client will listen on (as reported in the join request)
-	udpPort := req.UDPPort
-	if udpPort <= 0 || udpPort > 65535 {
-		writeJSON(w, http.StatusBadRequest, ErrorResponse{Error: "udpPort is required"})
-		return
-	}
-
 	token := generateToken()
-	addr := &net.UDPAddr{IP: net.ParseIP(clientIP), Port: udpPort}
-
-	client, ok := h.mgr.RegisterClient(req.RoomID, req.DisplayName, req.Channel, addr, token)
+	// Address is initially nil — it will be learned from the first UDP packet
+	// (see forwarder.go handlePacket). Using HTTP source IP + reported UDP port
+	// is incorrect when the client is behind NAT, because the NAT assigns a
+	// different public port for UDP traffic.
+	client, ok := h.mgr.RegisterClient(req.RoomID, req.DisplayName, req.Channel, nil, token)
 	if !ok {
 		writeJSON(w, http.StatusTooManyRequests, ErrorResponse{Error: "room is full"})
 		return

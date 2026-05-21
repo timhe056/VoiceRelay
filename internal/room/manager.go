@@ -59,6 +59,7 @@ func NewManager(maxPerRoom int) *Manager {
 }
 
 // RegisterClient adds a client to a room/channel. If the room doesn't exist it is created.
+// addr may be nil — the actual UDP address is learned from the first voice packet.
 // Returns the Client and true on success, or nil and false if the room is full.
 func (m *Manager) RegisterClient(roomID string, displayName string, channel byte, addr *net.UDPAddr, token [16]byte) (*Client, bool) {
 	m.mu.Lock()
